@@ -23,8 +23,8 @@ jobs:
         with:
           github-token: ${{ secrets.SYNC_TOKEN }}
           script: |
-            const upstreamOwner = "SagerNet";
-            const upstreamRepo = "sing-box";
+            const upstreamOwner = "HyNetworks";
+            const upstreamRepo = "hysteria";
             const myOwner = context.repo.owner;
             const myRepo = context.repo.repo;
             const targetBranch = process.env.SYNC_TARGET_BRANCH;
