@@ -16,7 +16,7 @@ jobs:
     steps:
       - name: Sync via GitHub API
         id: sync
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           # Schedule uses the default branch; workflow_dispatch uses the selected branch.
           SYNC_TARGET_BRANCH: ${{ github.ref_name }}
@@ -87,6 +87,7 @@ jobs:
               }
             }
             const syncedTags = [];
+            const skippedDraftTags = [];
             const draftMarker = "<!-- managed-by-release-sync-v1 -->";
 
             // Oldest first, so release order remains chronological.
@@ -108,6 +109,7 @@ jobs:
               let createdNow = false;
               // Never modify or publish a draft that was not created by this workflow.
               if (targetRelease?.draft && !(targetRelease.body || "").includes(draftMarker)) {
+                skippedDraftTags.push(release.tag_name);
                 core.warning(`跳过手动创建的草稿 Release：${release.tag_name}`);
                 continue;
               }
@@ -188,7 +190,7 @@ jobs:
                   const uploadUrl = "https://uploads.github.com/repos/" + encodeURIComponent(myOwner) + "/" + encodeURIComponent(myRepo) + "/releases/" + targetRelease.id + "/assets?name=" + encodeURIComponent(stagedName);
                   const response = execFileSync("curl", ["--config", config, "--fail-with-body", "--silent", "--show-error",
                     "--request", "POST", "--header", "Content-Type: " + (asset.content_type || "application/octet-stream"),
-                    "--data-binary", "@" + file, uploadUrl], { encoding: "utf8", maxBuffer: 1024 * 1024 });
+                    "--upload-file", file, uploadUrl], { encoding: "utf8", maxBuffer: 1024 * 1024 });
                   staged = JSON.parse(response);
                   fs.unlinkSync(file);
                   if (!matches(asset, staged)) throw new Error("上传校验失败：" + asset.name);
@@ -245,6 +247,7 @@ jobs:
 
             core.setOutput("synced", String(syncedTags.length > 0));
             core.setOutput("summary", syncedTags.join(", "));
+            core.setOutput("skipped_drafts", skippedDraftTags.join(", "));
 
       - name: Send sync notification email
         if: steps.sync.outputs.synced == 'true'
@@ -261,3 +264,11 @@ jobs:
           body: |
             ${{ github.event.repository.name }} Releases 同步已完成。
             本次同步版本：${{ steps.sync.outputs.summary }}
+
+      - name: Report skipped manual drafts
+        if: steps.sync.outputs.skipped_drafts != ''
+        env:
+          SKIPPED_DRAFTS: ${{ steps.sync.outputs.skipped_drafts }}
+        run: |
+          echo "::error::未同步以下手动草稿 Release：$SKIPPED_DRAFTS"
+          exit 1
